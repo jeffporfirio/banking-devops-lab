@@ -26,6 +26,12 @@ docker-build:
 
   script:
     - docker build -t $CI_REGISTRY_IMAGE/banking-api:$CI_COMMIT_SHORT_SHA .
+    - docker save $CI_REGISTRY_IMAGE/banking-api:$CI_COMMIT_SHORT_SHA -o banking-api.tar
+
+  artifacts:
+    paths:
+      - banking-api.tar
+    expire_in: 1 hour
 
 docker-push:
   stage: publish
@@ -41,5 +47,5 @@ docker-push:
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u "$CI_REGISTRY_USER" --password-stdin
 
   script:
-    - docker build -t $CI_REGISTRY_IMAGE/banking-api:$CI_COMMIT_SHORT_SHA .
+    - docker load -i banking-api.tar
     - docker push $CI_REGISTRY_IMAGE/banking-api:$CI_COMMIT_SHORT_SHA
