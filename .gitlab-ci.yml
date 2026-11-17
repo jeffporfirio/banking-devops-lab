@@ -1,5 +1,6 @@
 stages:
   - test
+  - build
 
 test:
   stage: test
@@ -9,10 +10,18 @@ test:
   script:
     - echo "===== CREATE PYTHON ENVIRONMENT ====="
     - python3 -m venv .venv-ci
-
     - echo "===== INSTALL DEPENDENCIES ====="
-    - .venv-ci/bin/python -m pip install --upgrade pip
     - .venv-ci/bin/python -m pip install -r requirements.txt
-
     - echo "===== RUN PYTEST ====="
     - .venv-ci/bin/python -m pytest -v
+
+docker-build:
+  stage: build
+  tags:
+    - wsl-jfrog
+
+  script:
+    - echo "===== BUILD DOCKER IMAGE ====="
+    - docker build -t host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA .
+    - echo "===== VERIFY DOCKER IMAGE ====="
+    - docker image inspect host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
