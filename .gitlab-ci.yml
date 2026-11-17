@@ -1,18 +1,18 @@
 stages:
   - test
 
-runner-smoke-test:
+test:
   stage: test
   tags:
     - wsl-jfrog
 
   script:
-    - echo "===== RUNNER INFORMATION ====="
-    - whoami
-    - hostname
+    - echo "===== CREATE PYTHON ENVIRONMENT ====="
+    - python3 -m venv .venv-ci
 
-    - echo "===== PYTHON ====="
-    - python3 --version
+    - echo "===== INSTALL DEPENDENCIES ====="
+    - .venv-ci/bin/python -m pip install --upgrade pip
+    - .venv-ci/bin/python -m pip install -r requirements.txt
 
-    - echo "===== DOCKER ====="
-    - docker info
+    - echo "===== RUN PYTEST ====="
+    - .venv-ci/bin/python -m pytest -v
