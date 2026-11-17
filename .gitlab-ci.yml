@@ -1,6 +1,7 @@
 stages:
   - test
   - build
+  - publish
 
 test:
   stage: test
@@ -25,3 +26,20 @@ docker-build:
     - docker build -t host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA .
     - echo "===== VERIFY DOCKER IMAGE ====="
     - docker image inspect host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
+
+docker-publish:
+  stage: publish
+  tags:
+    - wsl-jfrog
+
+  script:
+    - export DOCKER_CONFIG="$(mktemp -d)"
+    - trap 'docker logout host.docker.internal:8082 >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+    - echo "===== LOGIN TO JFROG ====="
+    - echo "$JFROG_PASSWORD" | docker login host.docker.internal:8082 -u "$JFROG_USER" --password-stdin
+    - echo "===== PUSH COMMIT IMAGE ====="
+    - docker push host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
+    - echo "===== TAG LATEST ====="
+    - docker tag host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA host.docker.internal:8082/docker-local/banking-api:latest
+    - echo "===== PUSH LATEST IMAGE ====="
+    - docker push host.docker.internal:8082/docker-local/banking-api:latest
