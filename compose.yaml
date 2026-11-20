@@ -1,18 +1,22 @@
-services:
 
+services:
   api:
     image: host.docker.internal:8082/docker-local/banking-api:cc141427
     ports:
       - "5000:5000"
     environment:
       MONGO_URI: mongodb://mongo:27017
+      MONGO_USERNAME: ${MONGO_USERNAME:?MONGO_USERNAME not set}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD not set}
+      MONGO_AUTH_SOURCE: banking_lab
     depends_on:
       - mongo
 
   mongo:
     image: mongo:7
+    command: ["mongod", "--auth"]
     volumes:
       - mongo_data:/data/db
 
 volumes:
-  mongo_data:
+  mongo_data:
