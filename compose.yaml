@@ -1,7 +1,7 @@
 
 services:
   api:
-    image: host.docker.internal:8082/docker-local/banking-api:cc141427
+    image: ${API_IMAGE:?API_IMAGE not set}
     ports:
       - "5000:5000"
     environment:

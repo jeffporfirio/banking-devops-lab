@@ -1,7 +1,14 @@
+
 stages:
   - test
   - build
   - publish
+  - deploy
+
+
+# ==========================================
+# 1. PYTHON TESTS
+# ==========================================
 
 test:
   stage: test
@@ -11,38 +18,17 @@ test:
   script:
     - echo "===== CREATE PYTHON ENVIRONMENT ====="
     - python3 -m venv .venv-ci
+
     - echo "===== INSTALL DEPENDENCIES ====="
     - .venv-ci/bin/python -m pip install -r requirements.txt
+
     - echo "===== RUN PYTEST ====="
     - .venv-ci/bin/python -m pytest -v
 
-docker-build:
-  stage: build
-  tags:
-    - wsl-jfrog
 
-  script:
-    - echo "===== BUILD DOCKER IMAGE ====="
-    - docker build -t host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA .
-    - echo "===== VERIFY DOCKER IMAGE ====="
-    - docker image inspect host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
-
-docker-publish:
-  stage: publish
-  tags:
-    - wsl-jfrog
-
-  script:
-    - export DOCKER_CONFIG="$(mktemp -d)"
-    - trap 'docker logout host.docker.internal:8082 >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
-    - echo "===== LOGIN TO JFROG ====="
-    - echo "$JFROG_PASSWORD" | docker login host.docker.internal:8082 -u "$JFROG_USER" --password-stdin
-    - echo "===== PUSH COMMIT IMAGE ====="
-    - docker push host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
-    - echo "===== TAG LATEST ====="
-    - docker tag host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA host.docker.internal:8082/docker-local/banking-api:latest
-    - echo "===== PUSH LATEST IMAGE ====="
-    - docker push host.docker.internal:8082/docker-local/banking-api:latest
+# ==========================================
+# 2. VAULT OIDC TEST
+# ==========================================
 
 vault-read-test:
   stage: test
@@ -66,7 +52,7 @@ vault-read-test:
       vault_addr = os.environ["VAULT_ADDR"]
       jwt = os.environ["VAULT_ID_TOKEN"]
 
-      # Authenticate with GitLab OIDC token
+      # Authenticate with Vault using GitLab OIDC
       login_data = json.dumps({
           "role": "gitlab-ci",
           "jwt": jwt
@@ -85,7 +71,7 @@ vault-read-test:
 
       print("SUCCESS: GitLab authenticated with Vault.")
 
-      # Read Banking API secret
+      # Read Banking API secrets
       secret_request = urllib.request.Request(
           f"{vault_addr}/v1/secret/data/banking-api",
           headers={"X-Vault-Token": vault_token}
@@ -99,4 +85,275 @@ vault-read-test:
 
       print("SUCCESS: Banking API secrets retrieved.")
       print("SUCCESS: Secret values were not exposed.")
+
+      # Revoke temporary Vault token
+      revoke_request = urllib.request.Request(
+          f"{vault_addr}/v1/auth/token/revoke-self",
+          data=b"",
+          headers={"X-Vault-Token": vault_token},
+          method="POST"
+      )
+
+      with urllib.request.urlopen(revoke_request):
+          print("SUCCESS: Vault token revoked.")
+
+      PY
+
+
+# ==========================================
+# 3. DOCKER BUILD
+# ==========================================
+
+docker-build:
+  stage: build
+  tags:
+    - wsl-jfrog
+
+  script:
+    - echo "===== BUILD DOCKER IMAGE ====="
+    - docker build -t host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA .
+
+    - echo "===== VERIFY DOCKER IMAGE ====="
+    - docker image inspect host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
+
+
+# ==========================================
+# 4. PUBLISH TO JFROG
+# ==========================================
+
+docker-publish:
+  stage: publish
+  tags:
+    - wsl-jfrog
+
+  script:
+    - export DOCKER_CONFIG="$(mktemp -d)"
+    - trap 'docker logout host.docker.internal:8082 >/dev/null 2>&1 || true; rm -rf "$DOCKER_CONFIG"' EXIT
+
+    - echo "===== LOGIN TO JFROG ====="
+    - echo "$JFROG_PASSWORD" | docker login host.docker.internal:8082 -u "$JFROG_USER" --password-stdin
+
+    - echo "===== PUSH COMMIT IMAGE ====="
+    - docker push host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA
+
+    - echo "===== TAG LATEST ====="
+    - docker tag host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA host.docker.internal:8082/docker-local/banking-api:latest
+
+    - echo "===== PUSH LATEST IMAGE ====="
+    - docker push host.docker.internal:8082/docker-local/banking-api:latest
+
+
+# ==========================================
+# 5. AUTOMATED DEPLOYMENT
+# ==========================================
+
+deploy:
+  stage: deploy
+  tags:
+    - wsl-jfrog
+
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.banking-devops-lab
+
+  variables:
+    VAULT_ADDR: "http://127.0.0.1:8200"
+
+  resource_group: banking-devops-lab
+
+  script:
+    - |
+      python3 - <<'PY'
+      import json
+      import os
+      import shutil
+      import subprocess
+      import tempfile
+      import time
+      import urllib.request
+
+      vault_addr = os.environ["VAULT_ADDR"]
+      jwt = os.environ["VAULT_ID_TOKEN"]
+
+      vault_token = None
+      docker_config = None
+
+      try:
+          # ----------------------------------
+          # AUTHENTICATE WITH VAULT
+          # ----------------------------------
+
+          login_data = json.dumps({
+              "role": "gitlab-ci",
+              "jwt": jwt
+          }).encode()
+
+          login_request = urllib.request.Request(
+              f"{vault_addr}/v1/auth/jwt/login",
+              data=login_data,
+              headers={"Content-Type": "application/json"}
+          )
+
+          with urllib.request.urlopen(login_request) as response:
+              login = json.load(response)
+
+          vault_token = login["auth"]["client_token"]
+
+          print("SUCCESS: Authenticated with Vault.")
+
+          # ----------------------------------
+          # RETRIEVE MONGODB CREDENTIALS
+          # ----------------------------------
+
+          secret_request = urllib.request.Request(
+              f"{vault_addr}/v1/secret/data/banking-api",
+              headers={"X-Vault-Token": vault_token}
+          )
+
+          with urllib.request.urlopen(secret_request) as response:
+              secrets = json.load(response)["data"]["data"]
+
+          username = secrets["DEMO_DB_USERNAME"]
+          password = secrets["DEMO_DB_PASSWORD"]
+
+          if not username or not password:
+              raise RuntimeError("MongoDB credentials are empty.")
+
+          print("SUCCESS: MongoDB credentials retrieved.")
+
+          # ----------------------------------
+          # PREPARE DEPLOYMENT ENVIRONMENT
+          # ----------------------------------
+
+          env = os.environ.copy()
+
+          env["MONGO_USERNAME"] = username
+          env["MONGO_PASSWORD"] = password
+
+          env["API_IMAGE"] = (
+              "host.docker.internal:8082/docker-local/banking-api:"
+              + os.environ["CI_COMMIT_SHORT_SHA"]
+          )
+
+          docker_config = tempfile.mkdtemp(
+              prefix="banking-deploy-"
+          )
+
+          os.chmod(docker_config, 0o700)
+          env["DOCKER_CONFIG"] = docker_config
+
+          # ----------------------------------
+          # LOGIN TO JFROG
+          # ----------------------------------
+
+          subprocess.run(
+              [
+                  "docker",
+                  "login",
+                  "host.docker.internal:8082",
+                  "--username",
+                  os.environ["JFROG_USER"],
+                  "--password-stdin"
+              ],
+              input=os.environ["JFROG_PASSWORD"],
+              text=True,
+              check=True,
+              env=env
+          )
+
+          print("SUCCESS: Authenticated with JFrog.")
+
+          # ----------------------------------
+          # PULL NEW API IMAGE
+          # ----------------------------------
+
+          subprocess.run(
+              ["docker", "compose", "pull", "api"],
+              check=True,
+              env=env
+          )
+
+          print("SUCCESS: New API image downloaded.")
+
+          # ----------------------------------
+          # DEPLOY API
+          # Do not restart MongoDB
+          # ----------------------------------
+
+          subprocess.run(
+              [
+                  "docker",
+                  "compose",
+                  "up",
+                  "-d",
+                  "--no-deps",
+                  "api"
+              ],
+              check=True,
+              env=env
+          )
+
+          print("SUCCESS: API deployment completed.")
+
+          # ----------------------------------
+          # VERIFY API HEALTH
+          # ----------------------------------
+
+          health_url = "http://127.0.0.1:5000/health"
+
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(
+                      health_url,
+                      timeout=3
+                  ) as response:
+                      if response.status == 200:
+                          print("SUCCESS: API health check passed.")
+                          break
+
+              except Exception:
+                  pass
+
+              time.sleep(2)
+
+          else:
+              raise RuntimeError("API health check failed.")
+
+      finally:
+
+          # ----------------------------------
+          # CLEANUP DOCKER CONFIGURATION
+          # ----------------------------------
+
+          if docker_config:
+              shutil.rmtree(
+                  docker_config,
+                  ignore_errors=True
+              )
+
+          # ----------------------------------
+          # REVOKE VAULT TOKEN
+          # ----------------------------------
+
+          if vault_token:
+              revoke_request = urllib.request.Request(
+                  f"{vault_addr}/v1/auth/token/revoke-self",
+                  data=b"",
+                  headers={"X-Vault-Token": vault_token},
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(
+                      revoke_request,
+                      timeout=5
+                  ):
+                      print("SUCCESS: Vault token revoked.")
+
+              except Exception:
+                  print(
+                      "WARNING: Vault token revocation "
+                      "could not be confirmed."
+                  )
+
       PY
