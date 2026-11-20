@@ -43,3 +43,60 @@ docker-publish:
     - docker tag host.docker.internal:8082/docker-local/banking-api:$CI_COMMIT_SHORT_SHA host.docker.internal:8082/docker-local/banking-api:latest
     - echo "===== PUSH LATEST IMAGE ====="
     - docker push host.docker.internal:8082/docker-local/banking-api:latest
+
+vault-read-test:
+  stage: test
+  tags:
+    - wsl-jfrog
+
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.banking-devops-lab
+
+  variables:
+    VAULT_ADDR: "http://127.0.0.1:8200"
+
+  script:
+    - |
+      python3 - <<'PY'
+      import json
+      import os
+      import urllib.request
+
+      vault_addr = os.environ["VAULT_ADDR"]
+      jwt = os.environ["VAULT_ID_TOKEN"]
+
+      # Authenticate with GitLab OIDC token
+      login_data = json.dumps({
+          "role": "gitlab-ci",
+          "jwt": jwt
+      }).encode()
+
+      login_request = urllib.request.Request(
+          f"{vault_addr}/v1/auth/jwt/login",
+          data=login_data,
+          headers={"Content-Type": "application/json"}
+      )
+
+      with urllib.request.urlopen(login_request) as response:
+          login = json.load(response)
+
+      vault_token = login["auth"]["client_token"]
+
+      print("SUCCESS: GitLab authenticated with Vault.")
+
+      # Read Banking API secret
+      secret_request = urllib.request.Request(
+          f"{vault_addr}/v1/secret/data/banking-api",
+          headers={"X-Vault-Token": vault_token}
+      )
+
+      with urllib.request.urlopen(secret_request) as response:
+          secret = json.load(response)["data"]["data"]
+
+      assert "DEMO_DB_USERNAME" in secret
+      assert "DEMO_DB_PASSWORD" in secret
+
+      print("SUCCESS: Banking API secrets retrieved.")
+      print("SUCCESS: Secret values were not exposed.")
+      PY

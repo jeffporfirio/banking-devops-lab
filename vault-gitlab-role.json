@@ -1,0 +1,13 @@
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": "https://vault.banking-devops-lab",
+  "bound_claims": {
+    "project_path": "jeffporfirio/banking-devops-lab",
+    "ref": "master",
+    "ref_type": "branch"
+  },
+  "token_policies": ["gitlab-ci"],
+  "token_no_default_policy": true,
+  "token_explicit_max_ttl": 300
+}
