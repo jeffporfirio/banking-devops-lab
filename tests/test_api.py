@@ -123,3 +123,45 @@ def test_create_transaction_with_negative_amount(mock_get_collection):
 
     assert response.status_code == 400
     assert response.json["error"] == "amount must be a positive number"
+
+def test_liveness():
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json["status"] == "ok"
+
+
+@patch("app.get_database")
+def test_readiness_success(mock_get_database):
+    mock_database = MagicMock()
+    mock_get_database.return_value = mock_database
+
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json["status"] == "ready"
+    assert response.json["database"] == "connected"
+
+    mock_database.command.assert_called_once_with("ping")
+
+
+@patch("app.get_database")
+def test_readiness_failure(mock_get_database):
+    mock_database = MagicMock()
+    mock_database.command.side_effect = Exception("MongoDB unavailable")
+    mock_get_database.return_value = mock_database
+
+    app = create_app()
+    client = app.test_client()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json["status"] == "not_ready"
+    assert response.json["database"] == "unavailable"

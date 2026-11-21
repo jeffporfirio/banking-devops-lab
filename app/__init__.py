@@ -1,16 +1,35 @@
 from flask import Flask, jsonify, request
-from app.database import get_collection
+from app.database import get_collection, get_database
 
 
 def create_app():
     app = Flask(__name__)
 
     @app.get("/health")
+    @app.get("/health/live")
     def health():
         return jsonify({
             "status": "ok",
             "service": "banking_api"
         }), 200
+
+    @app.get("/health/ready")
+    def readiness():
+        try:
+            get_database().command("ping")
+
+            return jsonify({
+                "status": "ready",
+                "service": "banking_api",
+                "database": "connected"
+            }), 200
+
+        except Exception:
+            return jsonify({
+                "status": "not_ready",
+                "service": "banking_api",
+                "database": "unavailable"
+            }), 503
 
     @app.get("/transactions")
     def list_transactions():
