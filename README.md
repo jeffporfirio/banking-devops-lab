@@ -1,99 +1,167 @@
 # Banking DevOps Lab
 
-A hands-on DevOps/SRE laboratory simulating a banking application delivery environment.
+A hands-on DevOps/SRE laboratory simulating an enterprise banking application delivery environment.
 
-This project demonstrates the implementation of a containerized REST API and an automated CI/CD workflow, integrating testing, artifact management, secrets management and application deployment.
+This project demonstrates an end-to-end application delivery workflow using CI/CD automation, Docker, Kubernetes, GitOps, artifact management, secrets management, application health checks, and operational logging.
 
-The laboratory is developed incrementally, following practices commonly used in enterprise and banking environments.
+The laboratory is developed incrementally, focusing on practical DevOps/SRE engineering skills and enterprise-oriented practices.
 
 ## Project Status
 
-**Implemented:**
-- Flask REST API
-- MongoDB integration with authentication
-- Docker and Docker Compose
-- Automated tests with pytest
-- Git version control
-- GitLab CI/CD
-- GitLab Runner with Shell executor
-- Docker image build and publishing
-- JFrog Artifactory
-- HashiCorp Vault integration
-- GitLab OIDC authentication with Vault
-- Automated deployment using Docker Compose
-- API health verification after deployment
+**Implemented**
 
-**Planned:**
-- Kubernetes
-- ArgoCD / GitOps
+- Python Flask REST API
+- MongoDB integration with authentication
+- Docker containerization and Docker Compose
+- Automated application tests with pytest
+- GitLab CI/CD pipeline
+- Self-hosted GitLab Runner using Shell executor
+- Docker image build and publishing
+- JFrog Artifactory integration
+- HashiCorp Vault integration
+- GitLab OIDC/JWT authentication with Vault
+- Automated Docker Compose deployment
+- Kubernetes deployment using Kind
+- Kubernetes Services, StatefulSets and PersistentVolumeClaims
+- Kubernetes Liveness and Readiness Probes
+- ArgoCD GitOps synchronization
+- Application logging with configurable log levels
+- MongoDB failure and application recovery testing
+
+**Planned / Future Improvements**
+
 - Prometheus and Grafana
-- Centralized logging
+- Centralized log aggregation
+- Application and infrastructure metrics
+- Alerting and SLO definition
 - Troubleshooting scenarios and Root Cause Analysis
 - Terraform and cloud infrastructure
+- Dependency and security scanning
+- SonarQube integration
+- Production-grade application server using Gunicorn
 
 ---
 
 ## Architecture
 
-### Current Architecture
+The laboratory currently demonstrates two complementary application delivery workflows.
+
+### 1. CI/CD — GitLab, JFrog and Vault
 
 ```text
-                    Developer
-                        |
-                        | Git Push
-                        v
-                 GitLab Repository
-                        |
-                        v
-                 GitLab CI/CD Pipeline
-                        |
-          +-------------+-------------+
-          |             |             |
-          v             v             v
-       Pytest        Docker        Vault OIDC
-       Tests         Build         Authentication
-                        |             |
-                        v             v
-                  JFrog          MongoDB
-                 Artifactory    Credentials
-                        |
-                        v
-                 Docker Image
-                        |
-                        v
-                 Automated Deploy
-                        |
-                        v
-                 Docker Compose
-                   |         |
-                   v         v
-                Flask API  MongoDB
-                   |
-                   v
-               Health Check
+                 Developer
+                     |
+                     | Git Push
+                     v
+              GitLab Repository
+                     |
+                     v
+             GitLab CI/CD Pipeline
+                     |
+             +-------+-------+
+             |       |       |
+             v       v       v
+           Pytest  Docker   Vault OIDC
+                   Build    Authentication
+                     |       |
+                     v       v
+                   JFrog  MongoDB
+                Artifactory Credentials
+                     |
+                     v
+                Docker Image
+                     |
+                     v
+              Docker Compose
+                Deployment
+                     |
+              +------+------+
+              |             |
+              v             v
+           Flask API     MongoDB
+              |
+              v
+          Health Check
 ```
 
-### Application Architecture
+The GitLab CI/CD pipeline automates testing, image building, publishing, secrets retrieval and Docker Compose deployment.
 
-The application consists of two Docker Compose services:
+### 2. Kubernetes — Kind and ArgoCD GitOps
 
-- **Flask API:** exposes REST endpoints on port 5000.
-- **MongoDB:** stores banking transaction data and requires authentication.
+```text
+             Git Repository
+                    |
+                    v
+                 ArgoCD
+                    |
+              GitOps Sync
+                    |
+                    v
+              Kind Cluster
+                    |
+              Banking Namespace
+                    |
+           +--------+--------+
+           |                 |
+           v                 v
+      Flask API          MongoDB
+      Deployment         StatefulSet
+       2 Replicas          1 Replica
+           |                 |
+           v                 v
+       Kubernetes        Persistent
+        Service           Volume
+           |
+           v
+      Health Probes
+```
+
+The Kubernetes environment is managed separately through ArgoCD.
+
+The application image is loaded into the local Kind cluster using `kind load docker-image`. Kubernetes deployment is not currently an automated stage of the GitLab CI/CD pipeline.
+
+---
+
+## Application Architecture
+
+The application consists of two main components:
+
+- **Flask API:** exposes REST endpoints for health checks and banking transactions.
+- **MongoDB:** stores transaction data and requires authentication.
 
 The API connects to MongoDB using PyMongo.
 
-### CI/CD Architecture
+### Health Checks
 
-The CI/CD workflow is executed by a self-hosted GitLab Runner using the Shell executor.
+The application exposes separate health endpoints:
 
-The pipeline implements the following stages:
+| Endpoint | Purpose |
+|---|---|
+| `/health` | General application health |
+| `/health/live` | Liveness check |
+| `/health/ready` | Readiness check, including MongoDB connectivity |
 
-1. **Test:** creates a Python virtual environment, installs dependencies and executes pytest.
-2. **Build:** builds the Docker image using the commit SHA as its tag.
-3. **Publish:** authenticates with JFrog and publishes the Docker image.
-4. **Deploy:** authenticates with Vault through GitLab OIDC, retrieves MongoDB credentials, pulls the image and updates the API service.
+The readiness endpoint checks MongoDB availability and returns HTTP 503 when the database is unavailable.
 
-After deployment, the pipeline verifies the API health endpoint.
+Kubernetes uses Liveness and Readiness Probes to monitor the application.
+
+### Application Logging
+
+Application logging is centrally configured through `app/logging_config.py`.
+
+The logging level can be controlled using the `LOG_LEVEL` environment variable.
+
+Supported levels include:
+
+- DEBUG
+- INFO
+- WARNING
+- ERROR
+- CRITICAL
+
+Logs are written to standard output (`stdout`), allowing Docker and Kubernetes logging mechanisms to collect them.
+
+The configuration also applies the selected logging level to the Werkzeug logger.
 
 ---
 
@@ -108,12 +176,15 @@ After deployment, the pipeline verifies the API health endpoint.
 | Testing | pytest |
 | Containerization | Docker |
 | Container Orchestration | Docker Compose |
+| Kubernetes | Kubernetes / Kind |
+| GitOps | ArgoCD |
 | CI/CD | GitLab CI/CD |
 | CI/CD Runner | GitLab Runner |
 | Artifact Management | JFrog Artifactory |
 | Secrets Management | HashiCorp Vault |
 | Authentication | GitLab OIDC / JWT |
 | Version Control | Git |
+| Operating System | Linux / Ubuntu |
 
 ---
 
@@ -121,7 +192,7 @@ After deployment, the pipeline verifies the API health endpoint.
 
 The GitLab pipeline automates the application delivery lifecycle.
 
-### Pipeline stages
+### Pipeline Jobs
 
 | Job | Description |
 |---|---|
@@ -129,9 +200,9 @@ The GitLab pipeline automates the application delivery lifecycle.
 | `vault-read-test` | Validates GitLab OIDC authentication and Vault secret retrieval |
 | `docker-build` | Builds the application Docker image |
 | `docker-publish` | Publishes the image to JFrog Artifactory |
-| `deploy` | Deploys the new application version |
+| `deploy` | Deploys the application using Docker Compose |
 
-### Docker image management
+### Docker Image Management
 
 Docker images are tagged using the GitLab commit SHA.
 
@@ -143,12 +214,12 @@ host.docker.internal:8082/docker-local/banking-api:<commit-sha>
 
 The pipeline also publishes a `latest` tag.
 
-### Automated deployment
+### Automated Deployment
 
 The deployment job:
 
 1. Authenticates with HashiCorp Vault using a GitLab-issued OIDC token.
-2. Retrieves the MongoDB username and password.
+2. Retrieves MongoDB credentials.
 3. Authenticates with JFrog Artifactory.
 4. Pulls the Docker image corresponding to the current commit.
 5. Updates the Flask API using Docker Compose.
@@ -156,7 +227,66 @@ The deployment job:
 7. Removes temporary Docker authentication configuration.
 8. Revokes the temporary Vault token.
 
-The API is updated using `docker compose up -d --no-deps api`, avoiding an intentional restart of the MongoDB service.
+The API is updated using:
+
+```bash
+docker compose up -d --no-deps api
+```
+
+This avoids an intentional restart of the MongoDB service.
+
+---
+
+## Kubernetes and GitOps
+
+The project includes a local Kubernetes environment running on Kind.
+
+### Kubernetes Resources
+
+The following resources are implemented:
+
+- Namespace
+- API Deployment
+- API Service
+- MongoDB StatefulSet
+- MongoDB Service
+- PersistentVolumeClaim
+- Kustomize configuration
+
+The API Deployment runs two replicas.
+
+MongoDB runs as a StatefulSet with persistent storage.
+
+### ArgoCD
+
+ArgoCD manages the Kubernetes application through GitOps synchronization.
+
+The application is configured to monitor the Kubernetes manifests stored in the repository.
+
+The observed application state is:
+
+- Sync Status: Synced
+- Health Status: Healthy
+
+### Resilience Testing
+
+A MongoDB failure scenario was tested by scaling the MongoDB StatefulSet to zero replicas.
+
+Observed behavior:
+
+1. MongoDB became unavailable.
+2. API Pods remained running but became Not Ready.
+3. The liveness endpoint continued returning HTTP 200.
+4. The readiness endpoint returned HTTP 503.
+5. The API Service had no ready endpoints.
+6. MongoDB was restored to one replica.
+7. API Pods recovered their readiness automatically.
+8. The PVC remained bound.
+9. ArgoCD returned to Synced / Healthy.
+
+This scenario demonstrates the difference between application liveness and readiness, as well as Kubernetes service endpoint management and recovery behavior.
+
+**Current limitation:** Kubernetes deployment is managed separately through ArgoCD. The GitLab pipeline currently deploys through Docker Compose, not directly to Kubernetes.
 
 ---
 
@@ -164,13 +294,11 @@ The API is updated using `docker compose up -d --no-deps api`, avoiding an inten
 
 ### HashiCorp Vault
 
-Vault is used to store sensitive application configuration, including MongoDB credentials.
+Vault stores sensitive application configuration, including MongoDB credentials.
 
 The GitLab pipeline authenticates using JWT/OIDC rather than storing a Vault token as a GitLab CI/CD variable.
 
-The Vault policy follows the principle of least privilege, allowing:
-- Read access to the application secret.
-- Revocation of the temporary Vault token.
+The Vault policy follows the principle of least privilege, granting read access to the application secret.
 
 ### MongoDB Authentication
 
@@ -186,7 +314,7 @@ MONGO_AUTH_SOURCE
 
 Credentials are not stored in the Git repository.
 
-**Lab limitation:** Vault currently runs in development mode for this laboratory. This configuration is intended for learning and testing, not production use.
+**Lab limitation:** Vault currently runs in development mode. This configuration is intended for learning and testing, not production use.
 
 ---
 
@@ -198,13 +326,11 @@ Credentials are not stored in the Git repository.
 GET /health
 ```
 
-Example:
-
 ```bash
 curl http://localhost:5000/health
 ```
 
-Response:
+Example response:
 
 ```json
 {
@@ -213,31 +339,32 @@ Response:
 }
 ```
 
+### Liveness
+
+```http
+GET /health/live
+```
+
+Checks whether the application process is responding.
+
+### Readiness
+
+```http
+GET /health/ready
+```
+
+Checks application readiness, including MongoDB connectivity.
+
+Returns HTTP 200 when ready and HTTP 503 when MongoDB is unavailable.
+
 ### List Transactions
 
 ```http
 GET /transactions
 ```
 
-Example:
-
 ```bash
 curl http://localhost:5000/transactions
-```
-
-Example response:
-
-```json
-[
-  {
-    "reference": "TX001",
-    "amount": 150.5
-  },
-  {
-    "reference": "TX002",
-    "amount": 250.75
-  }
-]
 ```
 
 ### Create Transaction
@@ -246,15 +373,13 @@ Example response:
 POST /transactions
 ```
 
-Example:
-
 ```bash
 curl -X POST http://localhost:5000/transactions \
   -H "Content-Type: application/json" \
   -d '{"reference":"TX003","amount":100.00}'
 ```
 
-Response:
+Example response:
 
 ```json
 {
@@ -266,32 +391,88 @@ Response:
 
 ## Deployment and Verification
 
-The application is deployed using Docker Compose.
+### Docker Compose
 
-The deployment pipeline uses the image published in JFrog Artifactory.
-
-### Verify running containers
+Verify running containers:
 
 ```bash
 docker compose ps
 ```
 
-### Verify API health
+Verify API health:
 
 ```bash
 curl -i http://localhost:5000/health
 ```
 
-Expected HTTP status:
+### Docker Logging
 
-```text
-HTTP/1.1 200 OK
-```
-
-### Verify transactions
+Run the application with a configurable log level:
 
 ```bash
-curl http://localhost:5000/transactions
+docker run -d \
+  --name banking-api \
+  -p 5000:5000 \
+  -e LOG_LEVEL=INFO \
+  banking-api:logging
+```
+
+Inspect application logs:
+
+```bash
+docker logs banking-api
+```
+
+### Kubernetes
+
+Verify application resources:
+
+```bash
+kubectl get pods -n banking
+kubectl get services -n banking
+kubectl get pvc -n banking
+```
+
+Verify ArgoCD synchronization:
+
+```bash
+kubectl get applications -n argocd
+```
+
+---
+
+## Testing
+
+The project uses pytest for automated application testing.
+
+Current automated tests cover:
+
+- Health endpoint
+- Transaction listing
+- Transaction creation
+- Missing transaction reference
+- Missing transaction amount
+- Negative transaction amounts
+- Liveness endpoint
+- Readiness success
+- Readiness failure
+
+Run the tests locally:
+
+```bash
+.venv/bin/python -m pytest -v
+```
+
+Latest validation: **9 tests passed**.
+
+Python syntax validation:
+
+```bash
+python -m py_compile \
+  app/__init__.py \
+  app/database.py \
+  app/logging_config.py \
+  app/routes.py
 ```
 
 ---
@@ -310,31 +491,26 @@ banking-devops-lab/
 ├── tests/
 │   └── test_api.py
 │
+├── k8s/
+│   ├── api-deployment.yaml
+│   ├── api-service.yaml
+│   ├── kustomization.yaml
+│   ├── mongodb-pvc.yaml
+│   ├── mongodb-service.yaml
+│   ├── mongodb-statefulset.yaml
+│   └── namespace.yaml
+│
 ├── .gitlab-ci.yml
 ├── .gitignore
 ├── .dockerignore
 ├── Dockerfile
 ├── compose.yaml
+├── kind-config.yaml
 ├── requirements.txt
+├── vault-gitlab-policy.hcl
+├── vault-gitlab-role.json
 └── README.md
 ```
-
----
-
-## Testing
-
-The project uses pytest for automated application testing.
-
-Current test coverage includes:
-
-- Health endpoint
-- Listing transactions
-- Creating transactions
-- Missing transaction reference
-- Missing transaction amount
-- Negative transaction amounts
-
-Tests are executed automatically by GitLab CI/CD before the Docker image is built and published.
 
 ---
 
@@ -358,7 +534,7 @@ Tests are executed automatically by GitLab CI/CD before the Docker image is buil
 - [x] Automated test execution
 - [x] Docker image build
 - [x] Docker image publishing
-- [x] Automated application deployment
+- [x] Automated Docker Compose deployment
 
 ### 4. Artifact and Security Management
 - [x] JFrog Artifactory
@@ -370,28 +546,37 @@ Tests are executed automatically by GitLab CI/CD before the Docker image is buil
 - [ ] SonarQube integration
 
 ### 5. Kubernetes
-- [ ] Deployment
-- [ ] Service
+- [x] Kind cluster
+- [x] Namespace
+- [x] Deployment
+- [x] Service
+- [x] StatefulSet
+- [x] PersistentVolumeClaim
+- [x] Liveness and Readiness Probes
 - [ ] ConfigMap
-- [ ] Secret
-- [ ] PersistentVolumeClaim
+- [ ] Kubernetes Secret management improvements
 - [ ] Ingress
-- [ ] Health probes
 
 ### 6. GitOps
-- [ ] ArgoCD
-- [ ] GitOps repository
-- [ ] Automated synchronization
+- [x] ArgoCD
+- [x] GitOps synchronization
+- [x] Application health monitoring
+- [ ] Automated CI/CD integration with Kubernetes
 - [ ] Rollback strategies
 
 ### 7. Observability and SRE
+- [x] Application logging
+- [x] Configurable log levels
+- [x] Docker log collection
+- [x] Application health checks
+- [x] MongoDB failure and recovery testing
 - [ ] Centralized logging
 - [ ] Prometheus
 - [ ] Grafana
 - [ ] Metrics and monitoring
 - [ ] Alerting
-- [ ] Troubleshooting scenarios
-- [ ] Root Cause Analysis
+- [ ] SLO definition
+- [ ] Troubleshooting scenarios and Root Cause Analysis
 
 ### 8. Cloud and Infrastructure as Code
 - [ ] Terraform
@@ -403,7 +588,7 @@ Tests are executed automatically by GitLab CI/CD before the Docker image is buil
 
 ## Project Objectives
 
-The main objective is to build practical DevOps/SRE experience through an incremental implementation of an application delivery platform.
+The main objective is to build practical DevOps/SRE experience through the incremental implementation of an application delivery platform.
 
 Key areas of focus:
 
@@ -412,10 +597,11 @@ Key areas of focus:
 - Artifact management
 - Secrets management
 - Authentication and access control
-- Application deployment
-- Kubernetes and GitOps
-- Observability
-- Incident troubleshooting and RCA
+- Kubernetes orchestration
+- GitOps
+- Application health and resilience
+- Logging and observability
+- Incident troubleshooting and Root Cause Analysis
 - Infrastructure as Code
 
-The project simulates selected components of an enterprise application delivery workflow. It is a learning laboratory and is not intended to represent a production banking platform.
+This project simulates selected components of an enterprise application delivery workflow. It is a learning laboratory and is not intended to represent a production banking platform.
