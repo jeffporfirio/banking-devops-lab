@@ -6,6 +6,11 @@ This project demonstrates an end-to-end application delivery workflow using CI/C
 
 The laboratory is developed incrementally, focusing on practical DevOps/SRE engineering skills and enterprise-oriented practices.
 
+## Project Repositories
+
+- **GitHub:** [banking-devops-lab](https://github.com/jeffporfirio/banking-devops-lab)
+- **GitLab:** [banking-devops-lab](https://gitlab.com/jeffporfirio/banking-devops-lab) — CI/CD pipelines and automation.
+
 ## Project Status
 
 **Implemented**
